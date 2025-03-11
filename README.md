@@ -16,7 +16,7 @@
 
 1. 克隆仓库：
 ```bash
-git clone https://github.com/your-username/otogame-b50-to-xlsx.git
+git clone https://github.com/NightmareDreemurr/otogame-b50-to-xlsx.git
 cd otogame-b50-to-xlsx
 ```
 
