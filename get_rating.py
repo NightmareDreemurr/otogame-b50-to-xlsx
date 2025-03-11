@@ -129,134 +129,52 @@ def login_and_get_token(email, password):
                 "User-Agent": user_agent,
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                 "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                "Referer": "https://u.otogame.net/"
-            }
-            
-            logger.debug(f"发送请求到: {oauth_url}")
-            oauth_response = session.get(oauth_url, headers=oauth_headers, timeout=30)
-            print_response_info(oauth_response)
-            oauth_response.raise_for_status()
-            
-            logger.debug(f"OAuth响应URL: {oauth_response.url}")
-            logger.debug(f"OAuth响应状态码: {oauth_response.status_code}")
-            logger.debug(f"当前Cookies: {requests.utils.dict_from_cookiejar(session.cookies)}")
-            
-            # 如果直接重定向到回调URL，则已经登录
-            if "u.otogame.net/auth/callback" in oauth_response.url:
-                logger.info("检测到已经登录状态，直接进入授权流程")
-                callback_url = oauth_response.url
-                parsed_url = urlparse(callback_url)
-                code = parse_qs(parsed_url.query).get('code', [None])[0]
-                if code:
-                    return get_tokens_with_code(session, code)
-                else:
-                    logger.error("无法从URL获取授权码")
-                    return None
-            
-            # 第三步：提交登录请求
-            logger.info("Step 3: 登录到bemanicn.com")
-            # 获取XSRF令牌
-            cookies = session.cookies.get_dict()
-            logger.debug(f"当前Cookie: {cookies}")
-            xsrf_token = cookies.get('XSRF-TOKEN')
-            
-            if not xsrf_token:
-                logger.warning("无法获取XSRF令牌，尝试从响应头或HTML中获取")
-                # 从Set-Cookie头解析
-                if 'Set-Cookie' in oauth_response.headers:
-                    logger.debug(f"从Set-Cookie尝试获取XSRF令牌")
-                    for cookie in oauth_response.headers.get('Set-Cookie', '').split(';'):
-                        if 'XSRF-TOKEN=' in cookie:
-                            xsrf_token = cookie.split('XSRF-TOKEN=')[1].split(';')[0]
-                            logger.debug(f"从Set-Cookie找到令牌: {xsrf_token}")
-                            break
-                
-                # 如果还是没有，从HTML中获取
-                if not xsrf_token:
-                    logger.debug("从HTML尝试获取CSRF令牌")
-                    soup = BeautifulSoup(oauth_response.text, 'html.parser')
-                    meta_tag = soup.find('meta', {'name': 'csrf-token'})
-                    if meta_tag:
-                        xsrf_token = meta_tag['content']
-                        logger.debug(f"从HTML找到令牌: {xsrf_token}")
-            
-            if not xsrf_token:
-                logger.warning("警告：无法获取XSRF令牌，登录可能会失败")
-            else:
-                logger.info(f"成功获取XSRF令牌: {xsrf_token[:10]}...")
-            
-            # 获取X-Inertia-Version (如果页面中有)
-            inertia_version = None
-            try:
-                soup = BeautifulSoup(oauth_response.text, 'html.parser')
-                scripts = soup.find_all('script')
-                for script in scripts:
-                    if script.string and 'Inertia' in script.string and 'version' in script.string:
-                        import re
-                        match = re.search(r'version:\s*[\'"]([^\'"]+)[\'"]', script.string)
-                        if match:
-                            inertia_version = match.group(1)
-                            logger.debug(f"从页面提取Inertia版本: {inertia_version}")
-                            break
-            except Exception as e:
-                logger.error(f"解析Inertia版本时出错: {e}")
-            
-            if not inertia_version:
-                inertia_version = "207fd484b7c2ceeff7800b8c8a11b3b6"  # 使用默认值
-                logger.info(f"使用默认Inertia版本: {inertia_version}")
-            else:
-                logger.info(f"成功获取Inertia版本: {inertia_version}")
-            
-            # 登录请求
-            login_url = "https://bemanicn.com/login"
-            login_data = {
-                "email": email,
-                "password": password,
-                "remember": "on"
-            }
-            
-            # X-XSRF-TOKEN需要URL解码后的令牌
-            import urllib.parse
-            decoded_xsrf = urllib.parse.unquote(xsrf_token)
-            logger.debug(f"解码后的XSRF令牌: {decoded_xsrf[:10]}...")
-            
-            login_headers = {
-                "User-Agent": user_agent,
-                "Accept": "text/html, application/xhtml+xml",
-                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                "Content-Type": "application/json",
-                "Origin": "https://bemanicn.com",
-                "Referer": "https://bemanicn.com/login",
-                "X-Inertia": "true",
-                "X-Inertia-Version": inertia_version,
-                "X-Requested-With": "XMLHttpRequest",
-                "X-XSRF-TOKEN": decoded_xsrf,
+                "Referer": "https://u.otogame.net/",
                 "sec-ch-ua": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\"",
                 "sec-ch-ua-mobile": "?0",
                 "sec-ch-ua-platform": "\"Windows\"",
-                "sec-fetch-dest": "empty",
-                "sec-fetch-mode": "cors",
-                "sec-fetch-site": "same-origin"
+                "sec-fetch-dest": "document",
+                "sec-fetch-mode": "navigate",
+                "sec-fetch-site": "cross-site",
+                "sec-fetch-user": "?1",
+                "upgrade-insecure-requests": "1"
             }
             
-            logger.debug(f"发送登录请求到: {login_url}")
-            logger.debug(f"登录请求头: {login_headers}")
-            logger.debug(f"登录数据: {login_data}")
+            logger.debug(f"发送请求到OAuth地址: {oauth_url}")
+            oauth_response = session.get(oauth_url, headers=oauth_headers, allow_redirects=True, timeout=30)
+            print_response_info(oauth_response)
+            logger.debug(f"当前Cookies: {requests.utils.dict_from_cookiejar(session.cookies)}")
             
-            login_response = session.post(login_url, json=login_data, headers=login_headers, timeout=30)
-            print_response_info(login_response)
-            
-            # 检查是否返回了409 Conflict状态，这可能表示需要重定向到OAuth页面
-            if login_response.status_code == 409 and 'X-Inertia-Location' in login_response.headers:
-                redirect_to = login_response.headers['X-Inertia-Location']
-                logger.info(f"登录成功，重定向到: {redirect_to}")
+            # 检查OAuth重定向响应是否是授权确认页面
+            if "授权提示" in oauth_response.text and "想要访问您的账户" in oauth_response.text:
+                logger.info("检测到授权确认页面，正在处理...")
                 
-                # 访问重定向URL
-                oauth_redirect_headers = {
+                # 解析HTML获取表单数据
+                soup = BeautifulSoup(oauth_response.text, 'html.parser')
+                # 查找同意按钮所在的表单（不含DELETE方法的表单）
+                authorize_form = soup.find('form', {'action': lambda x: x and '/oauth/authorize' in x and not 'DELETE' in str(x)})
+                
+                if not authorize_form:
+                    logger.error("无法找到授权表单")
+                    return None
+                    
+                # 提取表单中的所有隐藏字段
+                form_data = {}
+                for input_tag in authorize_form.find_all('input', {'type': 'hidden'}):
+                    if input_tag.get('name') and input_tag.get('value'):
+                        form_data[input_tag['name']] = input_tag['value']
+                
+                logger.debug(f"授权表单数据: {form_data}")
+                
+                # 发送同意授权的请求
+                authorize_url = "https://bemanicn.com/oauth/authorize"
+                authorize_headers = {
                     "User-Agent": user_agent,
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
                     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-                    "Referer": "https://bemanicn.com/login",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Origin": "https://bemanicn.com",
+                    "Referer": oauth_response.url,
                     "sec-ch-ua": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\"",
                     "sec-ch-ua-mobile": "?0",
                     "sec-ch-ua-platform": "\"Windows\"",
@@ -267,16 +185,14 @@ def login_and_get_token(email, password):
                     "upgrade-insecure-requests": "1"
                 }
                 
-                logger.debug(f"跟随重定向到: {redirect_to}")
-                logger.debug(f"当前Cookies: {requests.utils.dict_from_cookiejar(session.cookies)}")
+                logger.info("发送授权确认请求...")
+                authorize_response = session.post(authorize_url, data=form_data, headers=authorize_headers, allow_redirects=True, timeout=30)
+                print_response_info(authorize_response)
                 
-                oauth_redirect_response = session.get(redirect_to, headers=oauth_redirect_headers, timeout=30)
-                print_response_info(oauth_redirect_response)
-                
-                # 检查是否重定向到回调URL
-                logger.debug(f"OAuth重定向响应URL: {oauth_redirect_response.url}")
-                if "u.otogame.net/auth/callback" in oauth_redirect_response.url:
-                    callback_url = oauth_redirect_response.url
+                # 检查是否包含授权码
+                if "u.otogame.net/auth/callback" in authorize_response.url and "code=" in authorize_response.url:
+                    logger.info("成功获取授权并重定向到回调URL")
+                    callback_url = authorize_response.url
                     parsed_url = urlparse(callback_url)
                     code = parse_qs(parsed_url.query).get('code', [None])[0]
                     
@@ -288,14 +204,229 @@ def login_and_get_token(email, password):
                         logger.error("无法从URL获取授权码")
                         return None
                 else:
-                    logger.error(f"未能重定向到回调URL: {oauth_redirect_response.url}")
-                    logger.error(f"响应状态码: {oauth_redirect_response.status_code}")
-                    logger.error(f"响应内容: {oauth_redirect_response.text[:200]}...")
+                    logger.error(f"授权确认后未获取到有效的授权码")
+                    logger.error(f"响应URL: {authorize_response.url}")
                     return None
+
+            # 情况2: 如果URL中包含授权码（已授权用户的情况）
+            elif "u.otogame.net/auth/callback" in oauth_response.url and "code=" in oauth_response.url:
+                logger.info("检测到已授权状态，直接获取授权码")
+                callback_url = oauth_response.url
+                parsed_url = urlparse(callback_url)
+                code = parse_qs(parsed_url.query).get('code', [None])[0]
+                
+                if code:
+                    logger.info("成功获取授权码")
+                    logger.debug(f"授权码: {code[:10]}...")
+                    return get_tokens_with_code(session, code)
+                else:
+                    logger.error("无法从URL获取授权码")
+                    return None
+
+            # 情况3: 需要登录
             else:
-                logger.error(f"登录请求失败或未获得预期的重定向. 状态码: {login_response.status_code}")
-                logger.error(f"响应内容: {login_response.text[:200]}...")
-                return None
+                # 继续原有的登录流程代码
+                logger.info("Step 3: 登录到bemanicn.com")
+                # 获取XSRF令牌
+                cookies = session.cookies.get_dict()
+                logger.debug(f"当前Cookie: {cookies}")
+                xsrf_token = cookies.get('XSRF-TOKEN')
+                
+                if not xsrf_token:
+                    logger.warning("无法获取XSRF令牌，尝试从响应头或HTML中获取")
+                    # 从Set-Cookie头解析
+                    if 'Set-Cookie' in oauth_response.headers:
+                        logger.debug(f"从Set-Cookie尝试获取XSRF令牌")
+                        for cookie in oauth_response.headers.get('Set-Cookie', '').split(';'):
+                            if 'XSRF-TOKEN=' in cookie:
+                                xsrf_token = cookie.split('XSRF-TOKEN=')[1].split(';')[0]
+                                logger.debug(f"从Set-Cookie找到令牌: {xsrf_token}")
+                                break
+                
+                    # 如果还是没有，从HTML中获取
+                    if not xsrf_token:
+                        logger.debug("从HTML尝试获取CSRF令牌")
+                        soup = BeautifulSoup(oauth_response.text, 'html.parser')
+                        meta_tag = soup.find('meta', {'name': 'csrf-token'})
+                        if meta_tag:
+                            xsrf_token = meta_tag['content']
+                            logger.debug(f"从HTML找到令牌: {xsrf_token}")
+                
+                if not xsrf_token:
+                    logger.warning("警告：无法获取XSRF令牌，登录可能会失败")
+                else:
+                    logger.info(f"成功获取XSRF令牌: {xsrf_token[:10]}...")
+                
+                # 获取X-Inertia-Version (如果页面中有)
+                inertia_version = None
+                try:
+                    soup = BeautifulSoup(oauth_response.text, 'html.parser')
+                    scripts = soup.find_all('script')
+                    for script in scripts:
+                        if script.string and 'Inertia' in script.string and 'version' in script.string:
+                            import re
+                            match = re.search(r'version:\s*[\'"]([^\'"]+)[\'"]', script.string)
+                            if match:
+                                inertia_version = match.group(1)
+                                logger.debug(f"从页面提取Inertia版本: {inertia_version}")
+                                break
+                except Exception as e:
+                    logger.error(f"解析Inertia版本时出错: {e}")
+                
+                if not inertia_version:
+                    inertia_version = "207fd484b7c2ceeff7800b8c8a11b3b6"  # 使用默认值
+                    logger.info(f"使用默认Inertia版本: {inertia_version}")
+                else:
+                    logger.info(f"成功获取Inertia版本: {inertia_version}")
+                
+                # 登录请求
+                login_url = "https://bemanicn.com/login"
+                login_data = {
+                    "email": email,
+                    "password": password,
+                    "remember": "on"
+                }
+                
+                # X-XSRF-TOKEN需要URL解码后的令牌
+                import urllib.parse
+                decoded_xsrf = urllib.parse.unquote(xsrf_token)
+                logger.debug(f"解码后的XSRF令牌: {decoded_xsrf[:10]}...")
+                
+                login_headers = {
+                    "User-Agent": user_agent,
+                    "Accept": "text/html, application/xhtml+xml",
+                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                    "Content-Type": "application/json",
+                    "Origin": "https://bemanicn.com",
+                    "Referer": "https://bemanicn.com/login",
+                    "X-Inertia": "true",
+                    "X-Inertia-Version": inertia_version,
+                    "X-Requested-With": "XMLHttpRequest",
+                    "X-XSRF-TOKEN": decoded_xsrf,
+                    "sec-ch-ua": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\"",
+                    "sec-ch-ua-mobile": "?0",
+                    "sec-ch-ua-platform": "\"Windows\"",
+                    "sec-fetch-dest": "empty",
+                    "sec-fetch-mode": "cors",
+                    "sec-fetch-site": "same-origin"
+                }
+                
+                logger.debug(f"发送登录请求到: {login_url}")
+                logger.debug(f"登录请求头: {login_headers}")
+                logger.debug(f"登录数据: {login_data}")
+                
+                login_response = session.post(login_url, json=login_data, headers=login_headers, timeout=30)
+                print_response_info(login_response)
+                
+                # 检查是否返回了409 Conflict状态，这可能表示需要重定向到OAuth页面
+                if login_response.status_code == 409 and 'X-Inertia-Location' in login_response.headers:
+                    redirect_to = login_response.headers['X-Inertia-Location']
+                    logger.info(f"登录成功，重定向到: {redirect_to}")
+                    
+                    # 访问重定向URL
+                    oauth_redirect_headers = {
+                        "User-Agent": user_agent,
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                        "Referer": "https://bemanicn.com/login",
+                        "sec-ch-ua": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\"",
+                        "sec-ch-ua-mobile": "?0",
+                        "sec-ch-ua-platform": "\"Windows\"",
+                        "sec-fetch-dest": "document",
+                        "sec-fetch-mode": "navigate",
+                        "sec-fetch-site": "same-origin",
+                        "sec-fetch-user": "?1",
+                        "upgrade-insecure-requests": "1"
+                    }
+                    
+                    logger.debug(f"跟随重定向到: {redirect_to}")
+                    logger.debug(f"当前Cookies: {requests.utils.dict_from_cookiejar(session.cookies)}")
+                    
+                    # 检查登录后的重定向响应
+                    oauth_redirect_response = session.get(redirect_to, headers=oauth_redirect_headers, timeout=30)
+                    print_response_info(oauth_redirect_response)
+                    
+                    # 如果重定向到了回调URL并且包含授权码
+                    if "u.otogame.net/auth/callback" in oauth_redirect_response.url and "code=" in oauth_redirect_response.url:
+                        logger.info("登录成功并获取到授权码")
+                        callback_url = oauth_redirect_response.url
+                        parsed_url = urlparse(callback_url)
+                        code = parse_qs(parsed_url.query).get('code', [None])[0]
+                        
+                        if code:
+                            logger.info("成功获取授权码")
+                            logger.debug(f"授权码: {code[:10]}...")
+                            return get_tokens_with_code(session, code)
+                        else:
+                            logger.error("无法从URL获取授权码")
+                            return None
+                    # 如果需要确认授权
+                    elif "授权提示" in oauth_redirect_response.text and "想要访问您的账户" in oauth_redirect_response.text:
+                        logger.info("检测到授权确认页面，正在处理...")
+                        
+                        # 解析HTML获取表单数据
+                        soup = BeautifulSoup(oauth_redirect_response.text, 'html.parser')
+                        # 查找同意按钮所在的表单（不含DELETE方法的表单）
+                        authorize_form = soup.find('form', {'action': lambda x: x and '/oauth/authorize' in x and not 'DELETE' in str(x)})
+                        
+                        if not authorize_form:
+                            logger.error("无法找到授权表单")
+                            return None
+                            
+                        # 提取表单中的所有隐藏字段
+                        form_data = {}
+                        for input_tag in authorize_form.find_all('input', {'type': 'hidden'}):
+                            if input_tag.get('name') and input_tag.get('value'):
+                                form_data[input_tag['name']] = input_tag['value']
+                        
+                        logger.debug(f"授权表单数据: {form_data}")
+                        
+                        # 发送同意授权的请求
+                        authorize_url = "https://bemanicn.com/oauth/authorize"
+                        authorize_headers = {
+                            "User-Agent": user_agent,
+                            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                            "Content-Type": "application/x-www-form-urlencoded",
+                            "Origin": "https://bemanicn.com",
+                            "Referer": oauth_redirect_response.url,
+                            "sec-ch-ua": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\"",
+                            "sec-ch-ua-mobile": "?0",
+                            "sec-ch-ua-platform": "\"Windows\"",
+                            "sec-fetch-dest": "document",
+                            "sec-fetch-mode": "navigate",
+                            "sec-fetch-site": "same-origin",
+                            "sec-fetch-user": "?1",
+                            "upgrade-insecure-requests": "1"
+                        }
+                        
+                        logger.info("发送授权确认请求...")
+                        authorize_response = session.post(authorize_url, data=form_data, headers=authorize_headers, allow_redirects=True, timeout=30)
+                        print_response_info(authorize_response)
+                        
+                        # 检查是否包含授权码
+                        if "u.otogame.net/auth/callback" in authorize_response.url and "code=" in authorize_response.url:
+                            logger.info("成功获取授权并重定向到回调URL")
+                            callback_url = authorize_response.url
+                            parsed_url = urlparse(callback_url)
+                            code = parse_qs(parsed_url.query).get('code', [None])[0]
+                            
+                            if code:
+                                logger.info("成功获取授权码")
+                                logger.debug(f"授权码: {code[:10]}...")
+                                return get_tokens_with_code(session, code)
+                            else:
+                                logger.error("无法从URL获取授权码")
+                                return None
+                        else:
+                            logger.error(f"授权确认后未获取到有效的授权码")
+                            logger.error(f"响应URL: {authorize_response.url}")
+                            return None
+                    else:
+                        logger.error(f"登录后未获取到预期的响应")
+                        logger.error(f"响应URL: {oauth_redirect_response.url}")
+                        logger.error(f"响应内容: {oauth_redirect_response.text[:200]}...")
+                        return None
                 
         except json.JSONDecodeError as e:
             logger.error(f"解析JSON响应失败: {e}")
