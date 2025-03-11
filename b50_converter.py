@@ -1,3 +1,5 @@
+""" the converter for b50 rating json to excel """
+
 import json
 import pandas as pd
 from openpyxl import load_workbook
