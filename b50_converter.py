@@ -23,7 +23,10 @@ def calculate_constant(score, rating):
         bonus = 1.00 + position * 0.50
         constant = rating - bonus
     elif score >= 970000:
-        constant = rating - 0.00
+        # 线性内插: 970000->+0.00, 990000->+1.00
+        position = (score - 970000) / 20000
+        bonus = position
+        constant = rating - bonus
     elif score >= 900000:
         # 线性内插: 900000->-4.00, 970000->+0.00
         position = (score - 900000) / 70000
