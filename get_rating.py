@@ -11,6 +11,7 @@ import pandas as pd
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment
 from openpyxl.cell.cell import MergedCell
+import cloudscraper
 
 # 设置日志
 logging.basicConfig(
@@ -53,15 +54,20 @@ def print_response_info(resp):
 
 def create_session():
     """创建无代理会话"""
-    session = requests.Session()
+    # 使用cloudscraper创建会话
+    session = cloudscraper.create_scraper(
+        browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True
+        }
+    )
+    
     # 禁用代理设置
     session.proxies = {
         'http': None,
         'https': None
     }
-    # 设置超时和重试
-    session.mount('https://', requests.adapters.HTTPAdapter(max_retries=3))
-    session.mount('http://', requests.adapters.HTTPAdapter(max_retries=3))
     return session
 
 def login_and_get_token(email, password):
@@ -322,9 +328,6 @@ def get_tokens_with_code(session, code):
         if state:
             # 设置oauthState cookie
             session.cookies.set('oauthState', state.replace('=', ''), domain='u.otogame.net')
-            
-        # 设置cf_clearance cookie
-        session.cookies.set('cf_clearance', 'a8s3gYR6pnRzYS6jzs8KqVnBO2lHUBQlIGwXkEh_ej4-1733488907-1.2.1.1-TygbwlNZzUO1l6odEIKrGLbgrVtboc8FoCMMJAUFjIabzjxFVpEcs40ocMHGPVf9zEjlOvEWNq8dIrw.t8SPtLiDBLwJzdVuGNXa5Z6iWG0paQqaE1N8Oilea79kzhqqJHp2gEkQJj5Py1qikEzTdBNKzAtnT27dlLrYfSk8ZwBqLbwGL5qesNCjY1Ey2u7YvO7cLjAr.0LQvuaBngNF3x1fCjimnef91KruL7zEHTLqljhR.AsSS._Zzjtf_VjYTEJoPJTg_.a1qqSiRdcqKIFRnXYbKhtog6xaoQjyUx6TUiCpwR3U0tyRe9vjhcoZGISSyoJrY3zRhIGU2H5mL_qLOSHGQ0KDFkrQEV2Fd7XonYt6o4OSDBdnatmuJHJm', domain='u.otogame.net')
         
         logger.debug(f"访问回调URL: {callback_url}")
         logger.debug(f"当前Cookies: {requests.utils.dict_from_cookiejar(session.cookies)}")
