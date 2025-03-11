@@ -12,6 +12,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.styles import Alignment
 from openpyxl.cell.cell import MergedCell
 import cloudscraper
+import traceback
 
 # 设置日志
 logging.basicConfig(
@@ -699,27 +700,15 @@ def get_rating_data(auth_token):
             logger.error(f"错误响应头: {json.dumps(dict(e.response.headers), ensure_ascii=False, indent=2)}")
         return None
 
-def save_rating_to_file(rating_data, output_file="ongeki_rating.json"):
-    """
-    将评分数据保存到文件
-    """
-    try:
-        with open(output_file, 'w', encoding='utf-8') as f:
-            json.dump(rating_data, f, ensure_ascii=False, indent=2)
-        logger.info(f"评分数据已保存到 {output_file}")
-        return True
-    except Exception as e:
-        logger.error(f"保存数据失败: {e}")
-        return False
-
-def get_player_profile(auth_token):
+def get_player_profile(auth_token, session=None):
     """
     使用授权令牌获取玩家资料
     """
     logger.info("正在获取玩家资料...")
     
     try:
-        session = create_session()
+        if session is None:
+            session = create_session()
         url = "https://u.otogame.net/api/game/ongeki/profile"
         
         headers = {
@@ -739,7 +728,7 @@ def get_player_profile(auth_token):
         
         logger.debug("=== 准备发送玩家资料请求 ===")
         logger.debug(f"目标URL: {url}")
-        logger.debug(f"使用的授权令牌: {auth_token}")
+        logger.debug(f"使用的授权令牌: {auth_token[:20]}...")  # 只显示令牌前20个字符
         logger.debug(f"请求头: {json.dumps(headers, ensure_ascii=False, indent=2)}")
         
         # 发送请求前记录会话状态
@@ -756,31 +745,44 @@ def get_player_profile(auth_token):
         # 记录响应信息
         print_response_info(response)
         
-        # 即使状态码不是200，也尝试解析响应
+        # 检查响应状态码
+        if response.status_code == 401:
+            logger.error("获取玩家资料失败：未授权（401）")
+            logger.error("这可能是因为令牌已过期或无效")
+            return None
+        elif response.status_code == 403:
+            logger.error("获取玩家资料失败：禁止访问（403）")
+            logger.error("这可能是因为没有足够的权限")
+            return None
+        elif response.status_code != 200:
+            logger.error(f"获取玩家资料失败：HTTP {response.status_code}")
+            try:
+                error_data = response.json()
+                logger.error(f"错误详情: {json.dumps(error_data, ensure_ascii=False, indent=2)}")
+            except:
+                logger.error(f"响应内容: {response.text[:200]}...")
+            return None
+        
+        # 尝试解析响应
         try:
-            response_data = response.json()
-            if response.status_code >= 400:
-                logger.error("API错误响应:")
-                logger.error(f"错误代码: {response_data.get('code')}")
-                logger.error(f"错误消息: {response_data.get('message')}")
-                logger.error(f"时间戳: {response_data.get('timestamp')}")
-            else:
-                logger.debug(f"完整响应数据: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
-        except Exception as e:
-            logger.debug(f"完整响应文本: {response.text}")
-            logger.debug(f"解析响应失败: {str(e)}")
-        
-        response.raise_for_status()
-        
-        profile_data = response.json()
-        
-        # 保存到文件
-        with open('player_profile.json', 'w', encoding='utf-8') as f:
-            json.dump(profile_data, f, ensure_ascii=False, indent=2)
-        logger.info("玩家资料已保存到 player_profile.json")
-        
-        return profile_data
-        
+            profile_data = response.json()
+            if profile_data.get('code') != "ok":
+                logger.error(f"API返回错误: {profile_data.get('message', '未知错误')}")
+                return None
+                
+            # 检查数据结构
+            if 'data' not in profile_data:
+                logger.error("API响应中缺少data字段")
+                logger.debug(f"完整响应: {json.dumps(profile_data, ensure_ascii=False, indent=2)}")
+                return None
+            
+            return profile_data
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"解析响应JSON失败: {e}")
+            logger.error(f"响应内容: {response.text[:200]}...")
+            return None
+            
     except requests.exceptions.RequestException as e:
         logger.error(f"获取玩家资料失败: {e}")
         if hasattr(e, 'response') and e.response:
@@ -789,10 +791,13 @@ def get_player_profile(auth_token):
                 logger.error("API错误详情:")
                 logger.error(f"错误代码: {error_data.get('code')}")
                 logger.error(f"错误消息: {error_data.get('message')}")
-                logger.error(f"时间戳: {error_data.get('timestamp')}")
             except:
-                logger.error(f"错误响应文本: {e.response.text}")
+                logger.error(f"错误响应文本: {e.response.text[:200]}...")
             logger.error(f"错误响应头: {json.dumps(dict(e.response.headers), ensure_ascii=False, indent=2)}")
+        return None
+    except Exception as e:
+        logger.error(f"获取玩家资料时发生未预期的错误: {e}")
+        logger.error(traceback.format_exc())
         return None
 
 class B50Converter:
@@ -864,7 +869,11 @@ class B50Converter:
         
         # 读取JSON文件
         with open(json_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+            merged_data = json.load(f)
+        
+        # 获取评分数据
+        data = merged_data.get("rating", {})
+        profile = merged_data.get("profile", {}).get("data", {})
 
         # 获取文件中的总rating值
         total_rating = data['data']['rating'] / 100
@@ -929,8 +938,9 @@ class B50Converter:
 
         # 创建Excel文件
         with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
-            # 写入标题行
-            writer.sheets['B50详情'] = writer.book.create_sheet('B50详情')
+            
+            # 写入B50详情
+            writer.sheets['B50详情'] = writer.book.create_sheet('B50详情', 0)
             
             # 写入最佳曲目数据
             row_offset = 1  # 从第2行开始（第1行为标题）
@@ -1026,6 +1036,45 @@ class B50Converter:
                         max_length = max(max_length, len(str(cell.value)))
                 adjusted_width = max_length + 2
                 writer.sheets['B50详情'].column_dimensions[get_column_letter(column)].width = adjusted_width
+            # 写入玩家信息
+            writer.sheets['玩家信息'] = writer.book.create_sheet('玩家信息', 1)
+            if profile:
+                info_sheet = writer.sheets['玩家信息']
+                info_sheet.cell(row=1, column=1, value="玩家信息")
+                info_sheet.merge_cells('A1:B1')
+                info_sheet.cell(row=1, column=1).alignment = Alignment(horizontal='center')
+                
+                # 写入玩家基本信息
+                info_data = [
+                    ("玩家名称", profile.get('user_name', 'Unknown')),
+                    ("等级", profile.get('level', 'Unknown')),
+                    ("游玩次数", profile.get('play_count', 'Unknown')),
+                    ("最高Rating", profile.get('highest_rating', 'Unknown')/100 if isinstance(profile.get('highest_rating'), (int, float)) else 'Unknown'),
+                    ("当前Rating", profile.get('player_rating', 'Unknown')/100 if isinstance(profile.get('player_rating'), (int, float)) else 'Unknown'),
+                    ("总点数", profile.get('total_point', 'Unknown')),
+                    ("好友码", profile.get('friend_code', 'Unknown')),
+                    ("奖章数", profile.get('medal_count', 'Unknown')),
+                    ("战斗点数", profile.get('battle_point', 'Unknown')),
+                ]
+                
+                for idx, (key, value) in enumerate(info_data, 2):
+                    info_sheet.cell(row=idx, column=1, value=key)
+                    cell = info_sheet.cell(row=idx, column=2)
+                    if isinstance(value, float):
+                        self.set_number_format(cell, value, is_rating=True)
+                    else:
+                        cell.value = value
+                
+                # 调整列宽
+                for column in range(1, 3):
+                    max_length = 0
+                    for row in range(1, len(info_data) + 2):
+                        cell = info_sheet.cell(row=row, column=column)
+                        if cell.value:
+                            max_length = max(max_length, len(str(cell.value)))
+                    adjusted_width = max_length + 2
+                    info_sheet.column_dimensions[get_column_letter(column)].width = adjusted_width
+
 
         logger.info(f"转换完成！文件已保存为 {excel_file}")
         logger.info(f"玩家总Rating: {total_rating:.2f}")
@@ -1067,6 +1116,9 @@ def main():
         os.environ['http_proxy'] = ''
         os.environ['https_proxy'] = ''
     
+    # 创建session
+    session = create_session()
+    
     # 登录并获取令牌
     token_data = login_and_get_token(email, password)
     
@@ -1077,13 +1129,16 @@ def main():
     # 检查是否直接获取了评分数据
     rating_data = None
     auth_token = None
+    id_token = None
     if isinstance(token_data, dict):
         if "rating_data" in token_data:
             rating_data = token_data["rating_data"]
             auth_token = token_data.get("auth_token")
+            id_token = token_data.get("id_token")
             logger.info("已从认证过程中获取评分数据")
         elif "auth_token" in token_data:
             auth_token = token_data["auth_token"]
+            id_token = token_data.get("id_token")
             # 使用授权令牌获取评分数据
             logger.info("使用授权令牌获取评分数据")
             rating_data = get_rating_data(auth_token)
@@ -1096,17 +1151,40 @@ def main():
         logger.error("获取评分数据失败")
         return
     
-    # 如果有auth_token，获取玩家资料
-    if auth_token:
+    # 准备合并的数据
+    merged_data = {
+        "profile": None,
+        "rating": rating_data
+    }
+    
+    # 如果有id_token，获取玩家资料
+    if id_token:
         logger.info("获取玩家资料...")
-        profile_data = get_player_profile(auth_token)
+        profile_data = get_player_profile(id_token, session)
         if profile_data:
             logger.info("玩家资料获取成功")
+            # 检查profile数据的内容
+            try:
+                player_name = profile_data.get('data', {}).get('user_name', 'Unknown')
+                player_level = profile_data.get('data', {}).get('level', 'Unknown')
+                logger.info(f"玩家名称: {player_name}")
+                logger.info(f"玩家等级: {player_level}")
+                # 将玩家资料添加到合并数据中
+                merged_data["profile"] = profile_data
+            except Exception as e:
+                logger.warning(f"解析玩家资料时出错: {e}")
         else:
             logger.warning("获取玩家资料失败")
     
-    # 保存评分数据到文件
-    save_success = save_rating_to_file(rating_data, args.output)
+    # 保存合并后的数据到文件
+    try:
+        with open(args.output, 'w', encoding='utf-8') as f:
+            json.dump(merged_data, f, ensure_ascii=False, indent=2)
+        logger.info(f"数据已保存到 {args.output}")
+        save_success = True
+    except Exception as e:
+        logger.error(f"保存数据失败: {e}")
+        save_success = False
     
     if save_success and args.excel:
         try:
@@ -1127,5 +1205,4 @@ if __name__ == "__main__":
         logger.info("程序被用户中断")
     except Exception as e:
         logger.error(f"程序出错: {e}")
-        import traceback
         logger.error(traceback.format_exc()) 

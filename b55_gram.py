@@ -1,6 +1,6 @@
 import json
 import requests
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import io
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -47,8 +47,8 @@ class B55GramGenerator:
         self.cell_width = 200
         self.cell_height = 100
         self.grid_width = 5  # 每行5首歌
-        self.section_padding = 40  # 区段之间的padding
-        self.font_size = 12
+        self.section_padding = 30  # 区段之间的padding
+        self.font_size = 14
         self.title_font_size = 24
         self.profile_height = 120  # 头部玩家信息的高度
         
@@ -287,13 +287,15 @@ class B55GramGenerator:
                 top_offset = (new_height - self.cell_height) // 2
                 jacket_canvas.paste(resized_jacket, (0, -top_offset))
                 
+            # 应用高斯模糊
+            jacket_canvas = jacket_canvas.filter(ImageFilter.GaussianBlur(4))
+            
             # 粘贴到主图像
             self.base_image.paste(jacket_canvas, (x, y))
             
         # 绘制半透明遮罩
         overlay = Image.new('RGBA', (self.cell_width, self.cell_height), (0, 0, 0, 128))
         self.base_image.paste(overlay, (x, y), overlay)
-        
         # 绘制难度颜色条 - 放在左侧
         diff_color = self.get_difficulty_color(song_data['difficulty'])
         draw.rectangle([x, y, x + 5, y + self.cell_height], fill=diff_color)
@@ -301,12 +303,12 @@ class B55GramGenerator:
         # 绘制难度图标 - 放在左上角
         diff_image = self.get_difficulty_image(song_data['difficulty'])
         if diff_image:
-            diff_pos_x = x + 10  # 放在左上角，与颜色条有一点距离
+            diff_pos_x = x + 16  # 放在左上角，与颜色条有一点距离
             diff_pos_y = y + 5
             self.base_image.paste(diff_image, (diff_pos_x, diff_pos_y), diff_image if diff_image.mode == 'RGBA' else None)
         
         # 绘制文字信息 - 将所有文本下移，避免与难度指示器冲突
-        text_x = x + 10
+        text_x = x + 16
         text_y = y + 25  # 从25开始而不是5，给难度图标留出空间
         
         # 歌曲名称（限制长度并添加省略号）
@@ -333,12 +335,12 @@ class B55GramGenerator:
 
     def draw_section_title(self, draw, x, y, title, rating=None):
         """绘制区段标题"""
-        draw.text((x, y), title, font=self.title_font, fill="white")
+        draw.text((x, y - 17), title, font=self.title_font, fill="white")
         if rating is not None:
             rating_text = f"Rating: {rating:.2f}"
             # 计算标题宽度以便将rating放在右侧
             title_width = self.title_font.getsize(title)[0] if hasattr(self.title_font, 'getsize') else self.title_font.getbbox(title)[2]
-            draw.text((x + title_width + 20, y), rating_text, font=self.font, fill="white")
+            draw.text((x + title_width + 600, y-5), rating_text, font=self.font, fill="white")
 
     def draw_player_profile(self, draw, player_data):
         """绘制玩家个人信息"""
