@@ -64,15 +64,18 @@ class B55GramGenerator:
             
         # 下载难度指示器图片
         self.difficulty_images = self.download_difficulty_images()
+        
+        # 加载等级图标
+        self.rank_images = self.load_rank_images()
             
         # 尝试加载中日文字体
         try:
             # Windows 系统默认中日文字体
             if os.name == 'nt':
-                self.font = ImageFont.truetype("C:\\Windows\\Fonts\\msyh.ttc", self.font_size)  # 微软雅黑
-                self.title_font = ImageFont.truetype("C:\\Windows\\Fonts\\msyh.ttc", self.title_font_size)
-                self.profile_font = ImageFont.truetype("C:\\Windows\\Fonts\\msyh.ttc", 20)  # 用于玩家信息
-                self.rating_font = ImageFont.truetype("C:\\Windows\\Fonts\\msyh.ttc", 36)  # 用于Rating数值
+                self.font = ImageFont.truetype("assets/fonts/BIZ-UDGOTHICB.TTC", self.font_size)  # NP-R
+                self.title_font = ImageFont.truetype("assets/fonts/BIZ-UDGOTHICB.TTC", self.title_font_size)
+                self.profile_font = ImageFont.truetype("assets/fonts/BIZ-UDGOTHICB.TTC", 20)  # 用于玩家信息
+                self.rating_font = ImageFont.truetype("assets/fonts/BIZ-UDGOTHICB.TTC", 36)  # 用于Rating数值
             # macOS 系统默认中日文字体
             elif os.name == 'posix':
                 self.font = ImageFont.truetype("/System/Library/Fonts/PingFang.ttc", self.font_size)
@@ -255,6 +258,49 @@ class B55GramGenerator:
         diff_name = difficulty_map.get(difficulty, "master")
         return self.difficulty_images.get(diff_name)
 
+    def load_rank_images(self):
+        """加载等级图标"""
+        rank_images = {}
+        rank_path = 'assets/ranks'
+        
+        # 等级对应关系
+        rank_map = {
+            1007500: 'sssplus',
+            1000000: 'sss',
+            990000: 'ss',
+            970000: 's',
+            940000: 'aaa',
+            900000: 'aa',
+            850000: 'a',
+            800000: 'bbb',
+            750000: 'bb',
+            700000: 'b',
+            500000: 'c',
+            0: 'd'
+        }
+        
+        # 加载所有等级图标
+        for score, rank in rank_map.items():
+            image_path = os.path.join(rank_path, f'score_tr_{rank}.png')
+            try:
+                if os.path.exists(image_path):
+                    img = Image.open(image_path)
+                    rank_images[score] = img
+                else:
+                    print(f"Warning: Rank image not found: {image_path}")
+            except Exception as e:
+                print(f"Error loading rank image {rank}: {e}")
+        
+        return rank_images
+        
+    def get_rank_image(self, score):
+        """获取对应分数的等级图标"""
+        thresholds = sorted(self.rank_images.keys(), reverse=True)
+        for threshold in thresholds:
+            if score >= threshold:
+                return self.rank_images[threshold]
+        return self.rank_images[0]  # 返回D等级图标作为默认值
+
     def draw_song_cell(self, draw, x, y, song_data):
         """绘制单个歌曲格子"""
         # 下载并绘制封面
@@ -296,6 +342,7 @@ class B55GramGenerator:
         # 绘制半透明遮罩
         overlay = Image.new('RGBA', (self.cell_width, self.cell_height), (0, 0, 0, 128))
         self.base_image.paste(overlay, (x, y), overlay)
+        
         # 绘制难度颜色条 - 放在左侧
         diff_color = self.get_difficulty_color(song_data['difficulty'])
         draw.rectangle([x, y, x + 5, y + self.cell_height], fill=diff_color)
@@ -304,12 +351,12 @@ class B55GramGenerator:
         diff_image = self.get_difficulty_image(song_data['difficulty'])
         if diff_image:
             diff_pos_x = x + 16  # 放在左上角，与颜色条有一点距离
-            diff_pos_y = y + 5
+            diff_pos_y = y + 10
             self.base_image.paste(diff_image, (diff_pos_x, diff_pos_y), diff_image if diff_image.mode == 'RGBA' else None)
         
         # 绘制文字信息 - 将所有文本下移，避免与难度指示器冲突
         text_x = x + 16
-        text_y = y + 25  # 从25开始而不是5，给难度图标留出空间
+        text_y = y + 30  # 从25开始而不是5，给难度图标留出空间
         
         # 歌曲名称（限制长度并添加省略号）
         name = song_data['music']['name']
@@ -328,10 +375,21 @@ class B55GramGenerator:
         score_text = f"{score}"
         rating_text = f"Base: {base} -> {rating}"
         
-        draw.text((text_x, text_y + 20), score_text, 
-                 font=self.font, fill="white")
-        draw.text((text_x, text_y + 40), rating_text, 
-                 font=self.font, fill="white")
+        score_text = "{:,}".format(int(score_text))  # Add commas to separate every three digits
+        draw.text((text_x, text_y + 16), score_text, 
+                 font=ImageFont.truetype("assets/fonts/Torus-SemiBold.otf", 23), fill="white")
+        draw.text((text_x, text_y + 45), rating_text, 
+                 font=ImageFont.truetype("assets/fonts/Torus-SemiBold.otf", 15), fill="white")
+                 
+        # 绘制等级图标 - 放在右下角
+        rank_image = self.get_rank_image(score)
+        if rank_image:
+            # 调整等级图标大小
+            rank_size = (50, 25)  # 根据需要调整大小
+            rank_image = rank_image.resize(rank_size)
+            rank_pos_x = x + self.cell_width - rank_size[0] - 7  # 右边留10像素边距
+            rank_pos_y = y + self.cell_height - rank_size[1] - 30 # 下边留10像素边距
+            self.base_image.paste(rank_image, (rank_pos_x, rank_pos_y), rank_image if rank_image.mode == 'RGBA' else None)
 
     def draw_section_title(self, draw, x, y, title, rating=None):
         """绘制区段标题"""
@@ -340,7 +398,7 @@ class B55GramGenerator:
             rating_text = f"Rating: {rating:.2f}"
             # 计算标题宽度以便将rating放在右侧
             title_width = self.title_font.getsize(title)[0] if hasattr(self.title_font, 'getsize') else self.title_font.getbbox(title)[2]
-            draw.text((x + title_width + 600, y-5), rating_text, font=self.font, fill="white")
+            draw.text((x + title_width + 600, y - 10), rating_text, font=ImageFont.truetype("assets/fonts/Torus-SemiBold.otf", 20), fill="white")
 
     def draw_player_profile(self, draw, player_data):
         """绘制玩家个人信息"""
@@ -447,7 +505,7 @@ class B55GramGenerator:
         
         # 绘制"最佳"部分
         y_offset = y_offset_start + self.section_padding
-        self.draw_section_title(draw, 10, y_offset, "RATING对象曲（最佳）", best_rating)
+        self.draw_section_title(draw, 10, y_offset, "BEST", best_rating)
         y_offset += self.title_font_size + 10
         
         for i, song_data in enumerate(best_scores[:max_best]):
@@ -457,7 +515,7 @@ class B55GramGenerator:
         
         # 绘制"新曲"部分
         y_offset += best_rows * self.cell_height + self.section_padding
-        self.draw_section_title(draw, 10, y_offset, "RATING对象曲（新曲）", new_rating)
+        self.draw_section_title(draw, 10, y_offset, "NEW", new_rating)
         y_offset += self.title_font_size + 10
         
         for i, song_data in enumerate(new_scores[:max_new]):
@@ -467,7 +525,7 @@ class B55GramGenerator:
         
         # 绘制"最近"部分
         y_offset += new_rows * self.cell_height + self.section_padding
-        self.draw_section_title(draw, 10, y_offset, "RATING对象曲（最近）", recent_rating)
+        self.draw_section_title(draw, 10, y_offset, "RECENT", recent_rating)
         y_offset += self.title_font_size + 10
         
         for i, song_data in enumerate(recent_scores[:max_recent]):
@@ -506,7 +564,24 @@ def main():
     json_data = None
     try:
         with open('b50.json', 'r', encoding='utf-8') as f:
-            json_data = json.load(f)
+            data = json.load(f)
+            # 提取profile和rating数据
+            profile_data = data.get('profile', {})
+            rating_data = data.get('rating', {})
+            
+            # 构建player_data结构
+            player_data = {
+                'data': {
+                    'user_name': profile_data.get('data', {}).get('user_name', '未知玩家'),
+                    'level': profile_data.get('data', {}).get('level', '??'),
+                    'player_rating': profile_data.get('data', {}).get('player_rating', 0),
+                    'avatar_path': None  # 暂时不处理头像
+                }
+            }
+            
+            # 使用rating数据
+            json_data = rating_data
+            
     except Exception as e:
         print(f"Error loading b50.json: {e}")
         print("Creating minimal json data structure")
@@ -522,15 +597,14 @@ def main():
                 "hot_rating_list": []
             }
         }
-    
-    # 读取玩家个人信息（如果存在）
-    player_data = None
-    if os.path.exists('player_profile.json'):
-        try:
-            with open('player_profile.json', 'r', encoding='utf-8') as f:
-                player_data = json.load(f)
-        except Exception as e:
-            print(f"Warning: Failed to load player profile: {e}")
+        player_data = {
+            'data': {
+                'user_name': '未知玩家',
+                'level': '??',
+                'player_rating': 0,
+                'avatar_path': None
+            }
+        }
     
     # 生成图像
     generator = B55GramGenerator()
