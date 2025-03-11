@@ -26,9 +26,11 @@ logger = logging.getLogger(__name__)
 
 def print_request_info(req):
     """打印请求信息，用于调试"""
+    logger.debug("=== 请求信息 ===")
     logger.debug(f"请求URL: {req.url}")
     logger.debug(f"请求方法: {req.method}")
     logger.debug(f"请求头: {dict(req.headers)}")
+    logger.debug(f"请求Cookies: {req._cookies.get_dict() if hasattr(req, '_cookies') else None}")
     if req.body:
         try:
             if isinstance(req.body, bytes):
@@ -41,16 +43,27 @@ def print_request_info(req):
 
 def print_response_info(resp):
     """打印响应信息，用于调试"""
+    logger.debug("=== 响应信息 ===")
     logger.debug(f"响应状态码: {resp.status_code}")
     logger.debug(f"响应头: {dict(resp.headers)}")
+    logger.debug(f"响应Cookies: {requests.utils.dict_from_cookiejar(resp.cookies)}")
+    
+    # 尝试解析响应内容
     try:
-        if 'application/json' in resp.headers.get('Content-Type', ''):
-            logger.debug(f"响应体(JSON): {resp.json()}")
+        if resp.headers.get('Content-Type', '').startswith('application/json'):
+            response_json = resp.json()
+            logger.debug(f"响应体(JSON): {json.dumps(response_json, ensure_ascii=False, indent=2)}")
+            # 如果是错误响应，特别记录错误信息
+            if resp.status_code >= 400:
+                logger.error(f"错误代码: {response_json.get('code')}")
+                logger.error(f"错误消息: {response_json.get('message')}")
+                logger.error(f"时间戳: {response_json.get('timestamp')}")
         else:
-            logger.debug(f"响应体: {resp.text[:500]}..." if len(resp.text) > 500 else f"响应体: {resp.text}")
-    except:
-        logger.debug(f"响应体: [无法解析]")
-    logger.debug(f"Cookies: {requests.utils.dict_from_cookiejar(resp.cookies)}")
+            logger.debug(f"响应体: {resp.text}")
+    except Exception as e:
+        logger.debug(f"响应体(原始): {resp.text}")
+        logger.debug(f"解析响应体失败: {str(e)}")
+    logger.debug("=== 响应信息结束 ===")
 
 def create_session():
     """创建无代理会话"""
@@ -484,25 +497,59 @@ def get_rating_data(auth_token):
     使用授权令牌获取评分数据
     """
     logger.info("正在获取评分数据...")
-    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
     
     try:
         session = create_session()
         url = "https://u.otogame.net/api/game/ongeki/rating"
+        
         headers = {
-            "User-Agent": user_agent,
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Authorization": f"Bearer {auth_token}",
+            "accept": "application/json, text/plain, */*",
+            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "authorization": f"Bearer {auth_token}",
+            "priority": "u=1, i",
+            "sec-ch-ua": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\"",
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
             "Referer": "https://u.otogame.net/ongeki/music",
-            "X-Requested-With": "XMLHttpRequest"
+            "Referrer-Policy": "strict-origin-when-cross-origin"
         }
         
-        logger.debug(f"直接获取评分数据: {url}")
-        logger.debug(f"使用的授权令牌: {auth_token[:10]}...")
+        logger.debug("=== 准备发送评分数据请求 ===")
+        logger.debug(f"目标URL: {url}")
+        logger.debug(f"使用的授权令牌: {auth_token}")
+        logger.debug(f"请求头: {json.dumps(headers, ensure_ascii=False, indent=2)}")
         
-        response = session.get(url, headers=headers, timeout=30)
+        # 发送请求前记录会话状态
+        logger.debug(f"当前会话Cookies: {session.cookies.get_dict()}")
+        
+        # 准备请求对象以便记录详细信息
+        req = requests.Request('GET', url, headers=headers)
+        prepped = session.prepare_request(req)
+        print_request_info(prepped)
+        
+        # 发送请求
+        response = session.send(prepped, timeout=30)
+        
+        # 记录响应信息
         print_response_info(response)
+        
+        # 即使状态码不是200，也尝试解析响应
+        try:
+            response_data = response.json()
+            if response.status_code >= 400:
+                logger.error("API错误响应:")
+                logger.error(f"错误代码: {response_data.get('code')}")
+                logger.error(f"错误消息: {response_data.get('message')}")
+                logger.error(f"时间戳: {response_data.get('timestamp')}")
+            else:
+                logger.debug(f"完整响应数据: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+        except Exception as e:
+            logger.debug(f"完整响应文本: {response.text}")
+            logger.debug(f"解析响应失败: {str(e)}")
+        
         response.raise_for_status()
         
         return response.json()
@@ -510,8 +557,15 @@ def get_rating_data(auth_token):
     except requests.exceptions.RequestException as e:
         logger.error(f"获取评分数据失败: {e}")
         if hasattr(e, 'response') and e.response:
-            logger.error(f"错误状态码: {e.response.status_code}")
-            logger.error(f"错误内容: {e.response.text[:200]}...")
+            try:
+                error_data = e.response.json()
+                logger.error("API错误详情:")
+                logger.error(f"错误代码: {error_data.get('code')}")
+                logger.error(f"错误消息: {error_data.get('message')}")
+                logger.error(f"时间戳: {error_data.get('timestamp')}")
+            except:
+                logger.error(f"错误响应文本: {e.response.text}")
+            logger.error(f"错误响应头: {json.dumps(dict(e.response.headers), ensure_ascii=False, indent=2)}")
         return None
 
 def save_rating_to_file(rating_data, output_file="ongeki_rating.json"):
@@ -526,6 +580,89 @@ def save_rating_to_file(rating_data, output_file="ongeki_rating.json"):
     except Exception as e:
         logger.error(f"保存数据失败: {e}")
         return False
+
+def get_player_profile(auth_token):
+    """
+    使用授权令牌获取玩家资料
+    """
+    logger.info("正在获取玩家资料...")
+    
+    try:
+        session = create_session()
+        url = "https://u.otogame.net/api/game/ongeki/profile"
+        
+        headers = {
+            "accept": "application/json, text/plain, */*",
+            "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "authorization": f"Bearer {auth_token}",
+            "priority": "u=1, i",
+            "sec-ch-ua": "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Google Chrome\";v=\"134\"",
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": "\"Windows\"",
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "Referer": "https://u.otogame.net/ongeki/profile",
+            "Referrer-Policy": "strict-origin-when-cross-origin"
+        }
+        
+        logger.debug("=== 准备发送玩家资料请求 ===")
+        logger.debug(f"目标URL: {url}")
+        logger.debug(f"使用的授权令牌: {auth_token}")
+        logger.debug(f"请求头: {json.dumps(headers, ensure_ascii=False, indent=2)}")
+        
+        # 发送请求前记录会话状态
+        logger.debug(f"当前会话Cookies: {session.cookies.get_dict()}")
+        
+        # 准备请求对象以便记录详细信息
+        req = requests.Request('GET', url, headers=headers)
+        prepped = session.prepare_request(req)
+        print_request_info(prepped)
+        
+        # 发送请求
+        response = session.send(prepped, timeout=30)
+        
+        # 记录响应信息
+        print_response_info(response)
+        
+        # 即使状态码不是200，也尝试解析响应
+        try:
+            response_data = response.json()
+            if response.status_code >= 400:
+                logger.error("API错误响应:")
+                logger.error(f"错误代码: {response_data.get('code')}")
+                logger.error(f"错误消息: {response_data.get('message')}")
+                logger.error(f"时间戳: {response_data.get('timestamp')}")
+            else:
+                logger.debug(f"完整响应数据: {json.dumps(response_data, ensure_ascii=False, indent=2)}")
+        except Exception as e:
+            logger.debug(f"完整响应文本: {response.text}")
+            logger.debug(f"解析响应失败: {str(e)}")
+        
+        response.raise_for_status()
+        
+        profile_data = response.json()
+        
+        # 保存到文件
+        with open('player_profile.json', 'w', encoding='utf-8') as f:
+            json.dump(profile_data, f, ensure_ascii=False, indent=2)
+        logger.info("玩家资料已保存到 player_profile.json")
+        
+        return profile_data
+        
+    except requests.exceptions.RequestException as e:
+        logger.error(f"获取玩家资料失败: {e}")
+        if hasattr(e, 'response') and e.response:
+            try:
+                error_data = e.response.json()
+                logger.error("API错误详情:")
+                logger.error(f"错误代码: {error_data.get('code')}")
+                logger.error(f"错误消息: {error_data.get('message')}")
+                logger.error(f"时间戳: {error_data.get('timestamp')}")
+            except:
+                logger.error(f"错误响应文本: {e.response.text}")
+            logger.error(f"错误响应头: {json.dumps(dict(e.response.headers), ensure_ascii=False, indent=2)}")
+        return None
 
 class B50Converter:
     @staticmethod
@@ -808,13 +945,17 @@ def main():
     
     # 检查是否直接获取了评分数据
     rating_data = None
-    if isinstance(token_data, dict) and "rating_data" in token_data:
-        rating_data = token_data["rating_data"]
-        logger.info("已从认证过程中获取评分数据")
-    elif isinstance(token_data, dict) and "auth_token" in token_data:
-        # 使用授权令牌获取评分数据
-        logger.info("使用授权令牌获取评分数据")
-        rating_data = get_rating_data(token_data["auth_token"])
+    auth_token = None
+    if isinstance(token_data, dict):
+        if "rating_data" in token_data:
+            rating_data = token_data["rating_data"]
+            auth_token = token_data.get("auth_token")
+            logger.info("已从认证过程中获取评分数据")
+        elif "auth_token" in token_data:
+            auth_token = token_data["auth_token"]
+            # 使用授权令牌获取评分数据
+            logger.info("使用授权令牌获取评分数据")
+            rating_data = get_rating_data(auth_token)
     else:
         # 假设token_data直接是评分数据
         logger.info("假设返回的数据直接是评分数据")
@@ -823,6 +964,15 @@ def main():
     if not rating_data:
         logger.error("获取评分数据失败")
         return
+    
+    # 如果有auth_token，获取玩家资料
+    if auth_token:
+        logger.info("获取玩家资料...")
+        profile_data = get_player_profile(auth_token)
+        if profile_data:
+            logger.info("玩家资料获取成功")
+        else:
+            logger.warning("获取玩家资料失败")
     
     # 保存评分数据到文件
     save_success = save_rating_to_file(rating_data, args.output)

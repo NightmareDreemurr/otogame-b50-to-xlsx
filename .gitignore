@@ -25,7 +25,9 @@ wheels/
 venv/
 ENV/
 .env
-
+assets/
+cache/
+__pycache__/
 # IDE
 .idea/
 .vscode/
@@ -36,5 +38,6 @@ ENV/
 *.log
 otogame_debug.log
 *.json
+*.png
 *.xlsx
 !requirements.txt 
