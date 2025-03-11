@@ -49,7 +49,7 @@ class B55GramGenerator:
         self.grid_width = 5  # 每行5首歌
         self.section_padding = 30  # 区段之间的padding
         self.font_size = 14
-        self.title_font_size = 24
+        self.title_font_size = 30
         self.profile_height = 120  # 头部玩家信息的高度
         
         # 创建缓存目录
@@ -73,7 +73,7 @@ class B55GramGenerator:
             # Windows 系统默认中日文字体
             if os.name == 'nt':
                 self.font = ImageFont.truetype("assets/fonts/BIZ-UDGOTHICB.TTC", self.font_size)  # NP-R
-                self.title_font = ImageFont.truetype("assets/fonts/BIZ-UDGOTHICB.TTC", self.title_font_size)
+                self.title_font = ImageFont.truetype("assets/fonts/Torus-SemiBold.otf", self.title_font_size)
                 self.profile_font = ImageFont.truetype("assets/fonts/BIZ-UDGOTHICB.TTC", 20)  # 用于玩家信息
                 self.rating_font = ImageFont.truetype("assets/fonts/BIZ-UDGOTHICB.TTC", 36)  # 用于Rating数值
             # macOS 系统默认中日文字体
@@ -398,7 +398,9 @@ class B55GramGenerator:
             rating_text = f"Rating: {rating:.2f}"
             # 计算标题宽度以便将rating放在右侧
             title_width = self.title_font.getsize(title)[0] if hasattr(self.title_font, 'getsize') else self.title_font.getbbox(title)[2]
-            draw.text((x + title_width + 600, y - 10), rating_text, font=ImageFont.truetype("assets/fonts/Torus-SemiBold.otf", 20), fill="white")
+            # 从右往左对齐，空15pc
+            rating_width = self.title_font.getsize(rating_text)[0] if hasattr(self.title_font, 'getsize') else self.title_font.getbbox(rating_text)[2]
+            draw.text((x + 1000 - rating_width , y - 10), rating_text, font=ImageFont.truetype("assets/fonts/Torus-SemiBold.otf", 25), fill="white")
 
     def draw_player_profile(self, draw, player_data):
         """绘制玩家个人信息"""
@@ -533,10 +535,6 @@ class B55GramGenerator:
             y = y_offset + (i // self.grid_width) * self.cell_height
             self.draw_song_cell(draw, x, y, song_data)
         
-        # 在图片底部添加总Rating
-        total_rating = json_data['data']['rating'] / 100
-        y_offset += recent_rows * self.cell_height + 20
-        draw.text((10, y_offset), f"总Rating: {total_rating:.2f}", font=self.font, fill="white")
         
         return self.base_image
 
