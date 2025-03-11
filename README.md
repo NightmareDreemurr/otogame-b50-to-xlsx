@@ -1,12 +1,11 @@
-# ONGEKI B50数据导出工具
+# ONGEKI Best 55数据导出工具
 
-这是一个用于获取 ONGEKI 游戏 B50 数据并转换为 Excel 格式的工具。
+这是一个用于获取 ONGEKI 游戏数据并转换为 Excel 格式的工具。
 
 ## 功能特点
-
 - 自动登录 bemanicn.com 账号
 - 自动处理 Cloudflare 防护
-- 获取 B50 评分数据
+- 获取 Best 评分数据
 - 计算歌曲定数
 - 生成美观的 Excel 报表
 - 支持代理配置
