@@ -1087,6 +1087,7 @@ def main():
     parser.add_argument('--excel', action='store_true', help='同时生成Excel文件')
     parser.add_argument('--debug', action='store_true', help='开启详细调试信息')
     parser.add_argument('--no-proxy', action='store_true', help='禁用代理')
+    parser.add_argument('--image', action='store_true', help='生成B55图片')
     
     args = parser.parse_args()
     
@@ -1104,7 +1105,7 @@ def main():
         email = input("请输入bemanicn.com账号邮箱: ")
     if not password:
         import getpass
-        password = getpass.getpass("请输入bemanicn.com账号密码: ")
+        password = getpass.getpass("请输入bemanicn.com账号密码(输入的密码不会显示): ")
     
     logger.info("开始获取ONGEKI评分数据...")
     
@@ -1195,6 +1196,18 @@ def main():
             logger.info(f"Excel文件已生成: {excel_file}")
         except Exception as e:
             logger.error(f"转换为Excel失败: {e}")
+    
+    if save_success and args.image:
+        try:
+            logger.info("开始生成B55图片...")
+            from b55_gram import B55GramGenerator
+            generator = B55GramGenerator()
+            image = generator.generate(rating_data, merged_data.get("profile"))
+            image.save('b55_gram.png')
+            logger.info("B55图片已生成: b55_gram.png")
+        except Exception as e:
+            logger.error(f"生成B55图片失败: {e}")
+            logger.error(traceback.format_exc())
     
     logger.info("操作完成")
 
